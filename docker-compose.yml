@@ -1,0 +1,39 @@
+version: '3.8'
+
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: scgp_assignment_backend
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: postgres:13
+    container_name: scgp_postgres_db
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - scgp_postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  scgp_postgres_data:
