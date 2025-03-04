@@ -2,7 +2,6 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
-# import psycopg
 
 
 def main():
@@ -20,5 +19,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # print(psycopg.__version__)
     main()
