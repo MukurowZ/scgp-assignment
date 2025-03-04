@@ -1,13 +1,15 @@
 # SCGP Assignment
 
-Please read before proceed
-1. This is just an assignment for SCGP, please not run it on any production environment.
-2. This project already bundle with Docker-compose file, so you can just compose up.
-   1. Also, it already expose port to local machine.
-   2. You can execute API via host localhost:8000
-   3. For the UI at host localhost:
-3. Before execute anythings please don't forget to run migration
-4. For Frontend directory, it write on Vue, and [Pug](https://pugjs.org/api/getting-started.html) template
+## Please read before proceed
+
+1. This is just an assignment for SCGP, **do not run it on any production environment.**
+2. **Before proceeding with anything**, please copy **`.env.example`** and rename it to **`.env`**.
+3. This project is already bundled with a **Docker Compose** file, so you can just compose up.
+   - It already exposes ports to the local machine.
+   - You can access the API via `localhost:8000`.
+   - The UI is available at `localhost:` (check your port).
+4. **Before executing anything, don't forget to run the migration.**
+5. The **Frontend** is built with **Vue** and uses [Pug](https://pugjs.org/api/getting-started.html) for templates.
 
 
 ## For who just want to run this application
@@ -18,6 +20,20 @@ $ docker compose up -d
 ## Rebuild this application
 ```
 $ docker compose up --build --force-recreate
+```
+
+## To get your container ID
+```
+$ docker ps
+```
+
+## Execute command on API container
+```
+$ docker exec -it <YOUR_API_CONTAINER_ID> sh
+```
+or
+```
+$ docker exec -it <YOUR_API_CONTAINER_ID> bash
 ```
 
 ## To migrate please using Django-admin
