@@ -1,6 +1,7 @@
 import csv
 import io
 import numpy as np
+from scipy import stats
 from collections import defaultdict
 from django.db.models import Avg, Min, Max, FloatField, F
 from django.db.models.functions import Cast
@@ -61,6 +62,7 @@ def ingest_data(request):
   return JsonResponse({"message": f"Records processed successfully!"})
 
 
+@csrf_exempt
 def aggregated(request):
   if request.method != "GET":
       return HttpResponse("This route supports only GET request.")
@@ -113,76 +115,90 @@ def aggregated(request):
   stats["air_quality_min_timestamp"] = get_timestamp(stats["air_quality_min"], "air_quality")
   stats["air_quality_max_timestamp"] = get_timestamp(stats["air_quality_max"], "air_quality")
 
-  # Get median values and timestamp
+  # Prepare & Get median values and timestamp
   temperature_values = list(logs.values_list("temperature", flat=True).exclude(temperature__isnull=True))
   humidity_values = list(logs.values_list("humidity", flat=True).exclude(humidity__isnull=True))
   air_quality_values = list(logs.values_list("air_quality", flat=True).exclude(air_quality__isnull=True))
-
-  # Get median values and timestamp
   stats["temperature_median"], stats["temperature_median_timestamp"] = get_median(temperature_values, "temperature")
   stats["humidity_median"], stats["humidity_median_timestamp"] = get_median(humidity_values, "humidity")
   stats["air_quality_median"], stats["air_quality_median_timestamp"] = get_median(air_quality_values, "air_quality")
 
   return JsonResponse(stats, safe=False)
 
+
+
+
+@csrf_exempt
 def processed_data(request):
-  totalLogs = Log.objects.count()
+  total_logs = Log.objects.count()
 
-  def iqr_filter(sensor: SensorType):
-    # Fetch sensor values, ensure they are numbers
-    sensorValues = [
-      float(value) for value in Log.objects.exclude(
-        **{f"{sensor.value}__isnull": True}
-      ).values_list(sensor.value, flat=True) if value is not None
+  def advanced_filter(sensor: SensorType):
+    all_logs = Log.objects.exclude(
+      **{f"{sensor.value}__isnull": True}
+    )
+
+    # Convert to list of values and timestamps
+    sensor_data = [
+      {"value": float(getattr(log, sensor.value)), "timestamp": log.timestamp} 
+      for log in all_logs 
+      if getattr(log, sensor.value) is not None
     ]
 
-    if not sensorValues:
-      return []
+    if not sensor_data:
+      return {"processed_data": [], "anomalies": [], "stats": {}}
 
-    # Compute Q1, Q3, IQR, lower & upper bounds
-    Q1 = np.percentile(sensorValues, 25)
-    Q3 = np.percentile(sensorValues, 75)
+    sensorValues = [item["value"] for item in sensor_data]
+
+    # IQR Method
+    Q1 = float(np.percentile(sensorValues, 25))
+    Q3 = float(np.percentile(sensorValues, 75))
     IQR = Q3 - Q1
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
+    lower_bound = float(Q1 - 1.5 * IQR)
+    upper_bound = float(Q3 + 1.5 * IQR)
 
-    # Fetch filtered logs within IQR range and ordered by timestamp
-    logs = Log.objects.filter(
-      **{
-        f"{sensor.value}__gte": lower_bound,
-        f"{sensor.value}__lte": upper_bound,
-      }
-    ).order_by("timestamp")
+    z_scores = np.abs(stats.zscore(sensorValues))
 
-    # Begin to remove duplicates based on timestamp, keeping the most complete entry
-    seen_timestamps = defaultdict(list)
-    for log in logs:
-      seen_timestamps[log.timestamp].append(log)
-
-    deduplicated_logs = []
-    for timestamp, logs_with_same_timestamp in seen_timestamps.items():
-      # Logic for most complete: Example: pick the record with the most non-null fields
-      most_complete_log = max(
-        logs_with_same_timestamp,
-        # This lambda fn will focus only "sensor.value" field, will ignore the rest
-        key=lambda log: sum(1 for field in [sensor.value, 'timestamp'] if getattr(log, field) is not None)
+    # Identify anomalies
+    anomalies = []
+    for _, (data_point, z_score) in enumerate(zip(sensor_data, z_scores)):
+      is_iqr_anomaly = (
+        data_point["value"] < lower_bound or 
+        data_point["value"] > upper_bound
       )
-      deduplicated_logs.append(most_complete_log)
+      is_z_score_anomaly = z_score > 3
 
-    # Map to get only 
-    result = [
-      {"timestamp": getattr(log, "timestamp"), "value": getattr(log, sensor.value)} for log in deduplicated_logs
-    ]
+      if is_iqr_anomaly or is_z_score_anomaly:
+        anomalies.append({
+          "timestamp": str(data_point["timestamp"]),
+          "value": float(data_point["value"]),
+          "z_score": float(z_score),
+          "is_iqr_anomaly": bool(is_iqr_anomaly),
+          "is_z_score_anomaly": bool(is_z_score_anomaly)
+        })
 
-    return result
+    return {
+      "processed_data": [
+        {
+          "timestamp": str(item["timestamp"]),
+          "value": float(item["value"])
+        } for item in sensor_data
+      ],
+      "anomalies": anomalies,
+      "stats": {
+        "lower_bound": lower_bound,
+        "upper_bound": upper_bound,
+        "total_points": len(sensor_data),
+        "anomaly_count": len(anomalies)
+      }
+    }
 
-  processed_temperature = iqr_filter(SensorType.TEMPERATURE)
-  processed_humidity = iqr_filter(SensorType.HUMIDITY)
-  processed_air_quality = iqr_filter(SensorType.AIR_QUALITY)
+  processed_temperature = advanced_filter(SensorType.TEMPERATURE)
+  processed_humidity = advanced_filter(SensorType.HUMIDITY)
+  processed_air_quality = advanced_filter(SensorType.AIR_QUALITY)
 
   return JsonResponse({
-      "totalLogs": totalLogs,
-      "temperature": processed_temperature,
-      "humidity": processed_humidity,
-      "air_quality": processed_air_quality,
+    "total_logs": total_logs,
+    "temperature": processed_temperature,
+    "humidity": processed_humidity,
+    "air_quality": processed_air_quality,
   })

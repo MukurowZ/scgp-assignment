@@ -4,4 +4,5 @@ django-cors-headers==4.7.0
 numpy==2.2.3
 psycopg==3.2.5
 psycopg-c==3.2.5
+scipy==1.15.2
 sqlparse==0.5.3
